@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 #Import the libraries
-import tensorflow as tf
 import os
 import numpy as np
 import pandas as pd
@@ -26,14 +25,9 @@ from keras.layers import Dropout
 
 #import gensim
 #import nltk
-#from nltk.corpus import brown as brown
 #from gensim.models import Word2Vec
 from gensim.models import KeyedVectors
 #from gensim.models import FastText
-
-sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
-
-#nltk.download('brown')
 
 #IMPORTS DATASET AND LABELS
 print('Loading data...')
