@@ -1,18 +1,14 @@
-# -*- coding: utf-8 -*-
-
 #Import the libraries
+import tensorflow as tf
 import gc
 import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-#import json
+import json
 #import pickle
 
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from numpy.testing import assert_allclose
-from sklearn.ensemble import ExtraTreesClassifier
-from sklearn.feature_selection import SelectFromModel
 #from sklearn.feature_selection import SelectFromModel
 #from sklearn.model_selection import cross_val_score
 #from sklearn.model_selection import KFold
@@ -22,7 +18,7 @@ from sklearn.feature_selection import SelectFromModel
 from keras.utils import np_utils
 #from keras.wrappers.scikit_learn import KerasClassifier
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout
+from keras.layers import Dense, GRU, Dropout
 from keras.callbacks import ModelCheckpoint
 #from keras.preprocessing import sequence
 
@@ -46,19 +42,8 @@ bigram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
                      'features/ngram/essays/bigram/')
 trigram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
                       'features/ngram/essays/trigram/')
-#fourgram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
-#                       'features/ngram/essays/4gram/')
-'''
-dataset_path = ('C:/Users/iseliner/Documents/programming/' +
-                '/data/data/essays/train/original/')
-
-bigram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
-                     'features/char_ngram/essays/bigram/')
-trigram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
-                      'features/char_ngram/essays/trigram/')
-#fourgram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
-#                       'features/char_ngram/essays/4gram/')
-'''
+fourgram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
+                       'features/ngram/essays/4gram/')
 
 #           changes labels index to the test_taker_id
 train_label = train_label.set_index('test_taker_id')
@@ -67,7 +52,6 @@ train_label = train_label.drop('speech_prompt', axis=1)
 train_label = train_label.drop('essay_prompt', axis=1)
 
 vector_len = 200
-embed_len = 100
 
 #Function which imports a datasets from a path and puts it into a list
 def makeseq(path, listname):
@@ -76,18 +60,12 @@ def makeseq(path, listname):
         row = read_file.read().split()
         read_file.close()
         listname.append(row)
-        
-def makeseqvec(path, listname):
-    for file in os.listdir(path):
-        read_file = open(path + str(file))
-        row = read_file.read()
-        read_file.close()
-        listname.append(row)
+        del row
 
 #Makes vectors from the lists        
 def makevectors(listname, vectorlist, target_model):
     for essay in listname:
-        essay_sen = [np.zeros(embed_len)] * vector_len
+        essay_sen = [np.zeros(100)] * vector_len
         for i,word in enumerate(essay):
             if word in target_model.wv.vocab:
                 enc = target_model.wv[word]
@@ -122,14 +100,13 @@ def slicefiles(target_df):
                 new_essay = essay[vector_len*2:vector_len*3]
                 target_df.append(new_essay)
                 label_list.append(label)
-        counter += 1
-        
+        counter += 1            
    
 def padvectors(target_df):
     X = []
     for seq in target_df:
-        sequence = [np.zeros(embed_len)] * vector_len
-        for i,word in enumerate(seq):                               
+        sequence = [np.zeros(100)] * vector_len
+        for i,word in enumerate(seq):
             sequence[i] = word
         X.append(sequence)
     return X
@@ -144,17 +121,10 @@ def vectorizedata(target_df, target_model):
                 enc = target_model.wv[word]
                 sequence.append(enc)
             else:
-                enc = np.array([0]*embed_len)
+                enc = np.array([0]*100)
                 sequence.append(enc)
         X.append(sequence)
-    return X    
-
-def makelower(target_list):
-    for x in range(len(target_list)):
-        for y in range(len(target_list[x])):
-            if target_list[x][y].isalpha():
-                target_list[x][y] = target_list[x][y].lower()
-            
+    return X          
 
 #11000 elements, each containing all words in their respective essay
 print('Loading labels and data...')
@@ -172,27 +142,62 @@ appenddata(bigram_essay_path,df,label_list,11000)
 appenddata(trigram_essay_path,df,label_list,11000)
 #appenddata(fourgram_essay_path,df,label_list,11000)
 
-#makelower(df)
+#Slice elements in the dataset that are longer than the desired length
 slicefiles(df)
 
+'''
+#Fetching i-vectors from distributed json file
+ivector = []
+with open('C:/Users/iseliner/Documents/programming/' +
+          '/data/data/ivectors/train/ivectors.json') as data_file:    
+    data = json.load(data_file)
+    for x in data:
+        ivector.append(data[x])
+
+ivector = np.array(ivector)
+scaler = MinMaxScaler(copy=False,feature_range=(0, 1))
+scaler.fit_transform(ivector)
+'''
 
 #sg=1 is skip-gram, cbow otherwise
 print('Building Word2Vec...')
-
-model = Word2Vec(sentences=df, size=100, min_count=0, workers=6, window=5,sg=0, compute_loss=True)
+model = Word2Vec(sentences=df, size=100, min_count=0, workers=6, window=5,sg=0)
 word_vectors = model.wv
-word_vectors.save('C:/Users/iseliner/Documents/programming/embedding_models/word2vectors_cbow150_max80000_word1_char23.bin')
-#vocab_obj = model.wv.vocab.items()
-#print(len(vocab_obj))
-#model.get_latest_training_loss()
-
+word_vectors.save('C:/Users/iseliner/Documents/programming/embedding_models/word2vectors_cbow_len200.bin')
 
 #Use this when the word vector is final, and comment out the model building above
 #model = KeyedVectors.load('C:/Users/iseliner/' +
-#                          'Documents/programming/embedding_models/word2vectors_cbow_word123.bin')
+#                    'Documents/programming/embedding_models/word2vectors.bin')
 
 #model = FastText(df, size=100, min_count=0, workers=5, window=5,sg=0)
 
+
+print('Setting up x_train and y_train...')
+df = vectorizedata(df, model)
+
+scaler2 = MinMaxScaler(copy=False,feature_range=(0, 1))
+new_df = pd.DataFrame(df)
+#print('Building FastText...')
+#
+#Will train the scaling function
+for i in range(new_df.size-1):
+    vector = new_df.iloc[1,i]
+    print(type(vector))
+    for j in vector:
+        scaler2.fit(j)
+
+X_train = []
+for vector in new_df:
+    X_train.append(scaler2.transform(vector))
+    
+df = padvectors(df)
+
+X_train = np.array(df)
+
+del df
+gc.collect()
+
+X_train = np.reshape(X_train, (X_train.shape))
 
 #clf = Pipeline([
 #  ('feature_selection', SelectFromModel(LinearSVC(penalty="l1"))),
@@ -214,22 +219,6 @@ encoder.fit(y)
 encoded_y = encoder.transform(y)
 y_train = np_utils.to_categorical(encoded_y)
 
-print('Setting up x_train and y_train...')
-
-df = vectorizedata(df, model)
-X_train = padvectors(df)
-#X_train = np.array(X_train)
-
-del df
-gc.collect()
-
-#select_model = ExtraTreesClassifier()
-#select_model.fit(X_train, y_train)
-#X_train = select_model.transform(X_train)
-
-X_train = np.array(X_train)
-X_train = np.reshape(X_train, (X_train.shape))
-
 #MODEL _________________________________________________________________
 print('Creating model...')
 
@@ -237,73 +226,52 @@ print('Creating model...')
 nn_model = Sequential()
 
 # Adding the first LSTM layer and some Dropout regularisation
-nn_model.add(LSTM(68, return_sequences = True, 
-                  input_shape = (X_train.shape[1], X_train.shape[2])))
+nn_model.add(GRU(200, return_sequences = True, 
+               input_shape = (X_train.shape[1], X_train.shape[2])))
 nn_model.add(Dropout(0.2))
 
 # Adding a second LSTM layer and some Dropout regularisation
-nn_model.add(LSTM(68, return_sequences = True))
+nn_model.add(GRU(200, return_sequences = False))
 nn_model.add(Dropout(0.2))
 
 # Adding a third LSTM layer and some Dropout regularisation
-nn_model.add(LSTM(68, return_sequences = False))
-nn_model.add(Dropout(0.2))
+#nn_model.add(GRU(150, return_sequences = False))
+#nn_model.add(Dropout(0.2))
 
 # Adding a fourth LSTM layer and some Dropout regularisation
-#nn_model.add(Dense(50, activation='softmax'))
+#nn_model.add(GRU(150))
 
 # Adding the output layer
 nn_model.add(Dense(11, activation='softmax'))
 
 #Should try the RMSPROP as optimizer
 # Compiling the RNN
-nn_model.compile(loss = 'categorical_crossentropy',
+nn_model.compile(loss = 'categorical_crossentropy', 
               optimizer = 'rmsprop', 
               metrics=['accuracy'])
 
-filepath = 'C:/Users/iseliner/Documents/programming/saved_models/LSTMmodel_cbow100_80000max_len200_2hidden_68node_w123.h5'
+filepath = 'C:/Users/iseliner/Documents/programming/saved_models/GRUmodel.h5'
 checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, 
                              save_best_only=True, mode='min')
 callbacks_list = [checkpoint]
+
 
 # Fitting the RNN to the Training set
 print('Fitting data to the model...')
-history = nn_model.fit(X_train, y_train, epochs=10, batch_size=90, 
+history = nn_model.fit(X_train, y_train, epochs = 20, batch_size = 50, 
                        callbacks=callbacks_list)
 print('Training complete!')
 
+#For later scoring
+#score = model.evaluate(x_test, y_test, batch_size=16)
 
-
-
-####LOAD MODEL###########################################
-'''
-from keras.models import load_model
-
-#load the model
-loaded_model = load_model('C:/Users/iseliner/Documents/programming/saved_models/LSTMmodel.h5')
-assert_allclose(loaded_model.predict(X_train),
-                loaded_model.predict(X_train), 1e-5)
-
-#fit the model
-filepath = 'C:/Users/iseliner/Documents/programming/saved_models/LSTMmodel_2.h5'
-checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, 
-                             save_best_only=True, mode='min')
-callbacks_list = [checkpoint]
-loaded_model.fit(X_train, y_train, epoch=15, batch_size=50, callbacks=callbacks_list)
-'''
-from keras import backend as K
-
-currentLearningRate = K.get_value(nn_model.optimizer.lr)
-plt.plot(range(1,11), history.history['acc'])
-plt.xlabel('Epochs')
-plt.ylabel('Accuracy')
-plt.show()
+#currentLearningRate = K.get_value(nn_model.optimizer.lr)
 
 #////////////////////////////////////////////////////////////////////////
 #TESTING ________________________________________________________________
 test_label = pd.read_csv('C:/Users/iseliner/Documents/programming/data/data/labels/dev/labels.dev.csv')
+speech_path = ('C:/Users/iseliner/Documents/programming/data/data/speech_transcriptions/dev/original/')
 essay_test_path = ('C:/Users/iseliner/Documents/programming/data/data/essays/dev/original/')
-speech_test_path = ('C:/Users/iseliner/Documents/programming/data/data/speech_transcriptions/dev/original/')
 
 #           changes labels index to the test_taker_id
 test_label = test_label.set_index('test_taker_id')
@@ -311,10 +279,10 @@ test_label = test_label.set_index('test_taker_id')
 test_label = test_label.drop('speech_prompt', axis=1)
 test_label = test_label.drop('essay_prompt', axis=1)
 
-def appendtest(target_data, target_df, label_list,length):
+def appendtest(target_data, target_df, label_list):
     makeseq(target_data, target_df)
     x = 0
-    while x < length:
+    while x < 1100:
         label_list.append(label_list[x])
         x += 1
 
@@ -327,7 +295,6 @@ def slicetestfiles(target_df):
             target_df[counter] = old_new_sen
         counter += 1
 
-print('Initializing test set labels')
 test_label_list = []
 x = 0
 while x < len(test_label):
@@ -336,19 +303,19 @@ while x < len(test_label):
     x += 1
 
 #11000 elements, each containing all words in the essay
-print('Initializing test data')
 test_df = []
 makeseq(essay_test_path, test_df)
-#makeseq(speech_test_path, test_df)
-#appendtest(speech_test_path, test_df, test_label_list,1100)
+#appendtest(essay_path,test_df,test_label_list)
+
+print('Initializing test data')
 slicetestfiles(test_df)
 test_df = vectorizedata(test_df, model)
 test_df = padvectors(test_df)
 
-X_test = np.array(test_df)
-X_test = np.reshape(X_test, (X_test.shape))
+x = np.array(test_df)
+X_test = np.reshape(x, (x.shape))
 
-print('Setting final labels')
+print('Initializing test set labels')
 label_test = pd.DataFrame(test_label_list)
 y = label_test.values
 encoder = LabelEncoder()
@@ -357,21 +324,21 @@ encoded_y = encoder.transform(y)
 y_test = np_utils.to_categorical(encoded_y)
 
 print('Running test set...')
-predicted_L2 = nn_model.evaluate(X_test, y_test, batch_size=32)
+predicted_L2 = nn_model.evaluate(X_test, y_test, batch_size=50)
 print(predicted_L2)
 
 #Prediction
 prediction = nn_model.predict(X_test, verbose=1)
 print(prediction)
- 
+
 #
 #Saves the history of the run
 import datetime
 loglog = history.history
-log_file = open('C:/Users/iseliner/Documents/programming/logfile.txt', 'a')
+log_file = open('C:/Users/iseliner/Documents/programming/GRUlogfile.txt', 'a')
 log_file.write(str(datetime.datetime.now()) + '\n')
-log_file.write('Training loss: ' + str(loglog['loss']) + '\n')
-log_file.write('Training acc: ' + str(loglog['acc']) + '\n')
+log_file.write('Training loss: ' + str(history.history['loss']) + '\n')
+log_file.write('Training acc: ' + str(history.history['acc']) + '\n')
 log_file.write('Test set: ' + str(predicted_L2) + '\n \n')
 log_file.close()
 
@@ -394,9 +361,10 @@ while x in range(len(y_test)):
     predictionslist_groundtruth.append(matrix_labels[category_pred])
     x += 1
 
-#MAKES CONFUSION MATRIX|||||||||||||||||||||||||||||||||||||||||||||||||||||||
+#MAKES CONFUSION MATRIX
 from sklearn.metrics import confusion_matrix
 import itertools
+import matplotlib.pyplot as plt
 
 def plot_confusion_matrix(cm, classes,
                           normalize=False,
@@ -451,35 +419,3 @@ plt.show()
 #Checks if GPU is usable
 #from tensorflow.python.client import device_lib
 #print(device_lib.list_local_devices())
-
-'''
-#Fetching i-vectors from distributed json file
-ivector = []
-with open('C:/Users/iseliner/Documents/programming/' +
-          '/data/data/ivectors/train/ivectors.json') as data_file:    
-    data = json.load(data_file)
-    for x in data:
-        ivector.append(data[x])
-
-ivector = np.array(ivector)
-scaler = MinMaxScaler(copy=False,feature_range=(0, 1))
-scaler.fit_transform(ivector)
-'''
-
-'''
-scaler2 = MinMaxScaler(copy=False,feature_range=(0, 1))
-new_df = pd.DataFrame(df)
-#print('Building FastText...')
-#
-#Will train the scaling function
-for i in range(new_df.size-1):
-    vector = new_df.iloc[1,i]
-    print(type(vector))
-    for j in vector:
-        scaler2.fit(j)
-
-X_train = []
-for vector in new_df:
-    X_train.append(scaler2.transform(vector))
-    '''
-    

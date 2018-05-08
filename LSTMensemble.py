@@ -1,37 +1,13 @@
-# -*- coding: utf-8 -*-
-
-#Import the libraries
-import gc
+##PREPROCESSING and LOADING OF DATA
 import os
+import gc
+import json
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-#import json
-#import pickle
-
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
-from numpy.testing import assert_allclose
-from sklearn.ensemble import ExtraTreesClassifier
-from sklearn.feature_selection import SelectFromModel
-#from sklearn.feature_selection import SelectFromModel
-#from sklearn.model_selection import cross_val_score
-#from sklearn.model_selection import KFold
-#from sklearn.feature_extraction.text import TfidfTransformer
-#from sklearn.feature_extraction.text import CountVectorizer
-
-from keras.utils import np_utils
-#from keras.wrappers.scikit_learn import KerasClassifier
-from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout
-from keras.callbacks import ModelCheckpoint
-#from keras.preprocessing import sequence
-
-#import gensim
-#import nltk
-#from nltk.corpus import brown as brown
 from gensim.models import Word2Vec
-from gensim.models import KeyedVectors
-#from gensim.models import FastText
+from keras.utils import np_utils
+from sklearn.preprocessing import LabelEncoder
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 #IMPORTS DATASET AND LABELS
 print('Loading data...')
@@ -46,6 +22,9 @@ bigram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
                      'features/ngram/essays/bigram/')
 trigram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
                       'features/ngram/essays/trigram/')
+
+speech_path = ('C:/Users/iseliner/Documents/programming' +
+                    '/data/data/speech_transcriptions/train/original/')
 #fourgram_essay_path = ('C:/Users/iseliner/Documents/programming/' +
 #                       'features/ngram/essays/4gram/')
 '''
@@ -109,19 +88,19 @@ def slicefiles(target_df):
     counter = 0
     for essay in target_df:
         if len(essay) > vector_len:
-            if len(essay) > vector_len*2:
-                new_essay = essay[vector_len:vector_len*2]
-            else:
-                new_essay = essay[vector_len:len(essay)]
+            #if len(essay) > vector_len*2:
+            #    new_essay = essay[vector_len:vector_len*2]
+            #else:
+            #    new_essay = essay[vector_len:len(essay)]
             old_new_sen = essay[0:vector_len]
-            label = label_list[counter]
+            #label = label_list[counter]
             target_df[counter] = old_new_sen
-            target_df.append(new_essay)
-            label_list.append(label)
-            if len(essay) > vector_len*3:
-                new_essay = essay[vector_len*2:vector_len*3]
-                target_df.append(new_essay)
-                label_list.append(label)
+            #target_df.append(new_essay)
+            #label_list.append(label)
+            #if len(essay) > vector_len*3:
+            #    new_essay = essay[vector_len*2:vector_len*3]
+            #    target_df.append(new_essay)
+            #    label_list.append(label)
         counter += 1
         
    
@@ -154,8 +133,8 @@ def makelower(target_list):
         for y in range(len(target_list[x])):
             if target_list[x][y].isalpha():
                 target_list[x][y] = target_list[x][y].lower()
-            
-
+                
+                
 #11000 elements, each containing all words in their respective essay
 print('Loading labels and data...')
 label_list = []
@@ -168,9 +147,6 @@ while x < len(train_label):
 #Creates the dataset (!)
 df = []
 makeseq(dataset_path, df)
-appenddata(bigram_essay_path,df,label_list,11000)
-appenddata(trigram_essay_path,df,label_list,11000)
-#appenddata(fourgram_essay_path,df,label_list,11000)
 
 #makelower(df)
 slicefiles(df)
@@ -179,28 +155,8 @@ slicefiles(df)
 #sg=1 is skip-gram, cbow otherwise
 print('Building Word2Vec...')
 
-model = Word2Vec(sentences=df, size=100, min_count=0, workers=6, window=5,sg=0, compute_loss=True)
-word_vectors = model.wv
-word_vectors.save('C:/Users/iseliner/Documents/programming/embedding_models/word2vectors_cbow150_max80000_word1_char23.bin')
-#vocab_obj = model.wv.vocab.items()
-#print(len(vocab_obj))
-#model.get_latest_training_loss()
+w2v = Word2Vec(sentences=df, size=embed_len, min_count=2, workers=6, window=5,sg=0)
 
-
-#Use this when the word vector is final, and comment out the model building above
-#model = KeyedVectors.load('C:/Users/iseliner/' +
-#                          'Documents/programming/embedding_models/word2vectors_cbow_word123.bin')
-
-#model = FastText(df, size=100, min_count=0, workers=5, window=5,sg=0)
-
-
-#clf = Pipeline([
-#  ('feature_selection', SelectFromModel(LinearSVC(penalty="l1"))),
-#  ('classification', RandomForestClassifier())
-#])
-#clf.fit(X, y)
-
-        
 print('Preparing data for input into the model...')
 #Creates the TRAINING INPUT for the model  
 
@@ -212,11 +168,11 @@ y = label_train.values
 encoder = LabelEncoder()
 encoder.fit(y)
 encoded_y = encoder.transform(y)
-y_train = np_utils.to_categorical(encoded_y)
+y_train_essay = np_utils.to_categorical(encoded_y)
 
 print('Setting up x_train and y_train...')
 
-df = vectorizedata(df, model)
+df = vectorizedata(df, w2v)
 X_train = padvectors(df)
 #X_train = np.array(X_train)
 
@@ -227,83 +183,128 @@ gc.collect()
 #select_model.fit(X_train, y_train)
 #X_train = select_model.transform(X_train)
 
-X_train = np.array(X_train)
-X_train = np.reshape(X_train, (X_train.shape))
+X_train_essay = np.array(X_train)
+X_train_essay = np.reshape(X_train_essay, (X_train_essay.shape))
 
-#MODEL _________________________________________________________________
-print('Creating model...')
+X_train_speech = X_train_essay
+y_train_speech = y_train_essay
 
-#Initalizing the RNN
-nn_model = Sequential()
+#IVECTOR
+print('Preparing data for input into the model...')
+#Fetching i-vectors from distributed json file
+ivector = []
+with open('C:/Users/iseliner/Documents/programming/' +
+          '/data/data/ivectors/train/ivectors.json') as data_file:    
+    data = json.load(data_file)
+    for x in data:
+        ivector.append(data[x])
+     
+y = train_label.values
+encoder = LabelEncoder()
+encoder.fit(y)
+ivec_encoded_y = encoder.transform(y)
+y_train_ivec = np_utils.to_categorical(ivec_encoded_y)
 
-# Adding the first LSTM layer and some Dropout regularisation
-nn_model.add(LSTM(68, return_sequences = True, 
-                  input_shape = (X_train.shape[1], X_train.shape[2])))
-nn_model.add(Dropout(0.2))
+ivector = np.array(ivector)
+clf = LinearDiscriminantAnalysis()
+clf.fit(ivector, ivec_encoded_y)
+X_new = clf.transform(ivector)
 
-# Adding a second LSTM layer and some Dropout regularisation
-nn_model.add(LSTM(68, return_sequences = True))
-nn_model.add(Dropout(0.2))
+#Creates the TRAINING INPUT for the model  
+X_train_ivec = np.reshape(X_new, (X_new.shape[0], X_new.shape[1], 1))
 
-# Adding a third LSTM layer and some Dropout regularisation
-nn_model.add(LSTM(68, return_sequences = False))
-nn_model.add(Dropout(0.2))
+#SPEECH
+#Creates the dataset (!)
+vector_len = 100
+speech_df = []
+makeseq(speech_path, speech_df)
 
-# Adding a fourth LSTM layer and some Dropout regularisation
-#nn_model.add(Dense(50, activation='softmax'))
+#makelower(df)
+slicefiles(speech_df)
+print('Building Word2Vec...')
 
-# Adding the output layer
-nn_model.add(Dense(11, activation='softmax'))
+w2v_speech = Word2Vec(sentences=speech_df, size=embed_len, min_count=2, workers=6, window=5,sg=0)
 
-#Should try the RMSPROP as optimizer
-# Compiling the RNN
-nn_model.compile(loss = 'categorical_crossentropy',
+speech_df = vectorizedata(speech_df, w2v_speech)
+X_train_speech = padvectors(speech_df)
+#X_train = np.array(X_train)
+
+del speech_df
+gc.collect()
+
+#select_model = ExtraTreesClassifier()
+#select_model.fit(X_train, y_train)
+#X_train = select_model.transform(X_train)
+
+X_train_speech = np.array(X_train_speech)
+X_train_speech = np.reshape(X_train_speech, (X_train_speech.shape))
+            
+
+## MODEL ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+from keras.utils import plot_model
+from keras.models import Model
+from keras.layers import Input
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.layers import LSTM
+from keras.layers import GRU
+from keras.layers.merge import concatenate
+from keras.callbacks import ModelCheckpoint
+
+#Essay word input model
+visible1 = Input(shape=(X_train_essay.shape[1], X_train_essay.shape[2]))
+lstm11 = LSTM(40, return_sequences=True)(visible1)
+lstm12 = LSTM(40, return_sequences=False)(lstm11)
+#lstm12 = LSTM(68)(lstm11)
+dense1 = Dense(40, activation='relu')(lstm12)
+
+#Speech transcript word input model
+visible2 = Input(shape=(X_train_speech.shape[1], X_train_speech.shape[2]))
+lstm21 = LSTM(10, return_sequences=False)(visible2)
+#lstm22 = LSTM(10)(lstm21)
+dense2 = Dense(10, activation='relu')(lstm21)
+
+#i-vector input model
+visible3 = Input(shape=(X_train_ivec.shape[1], 1))
+lstm31 = LSTM(10, return_sequences=True)(visible3)
+lstm32 = LSTM(10, return_sequences=False)(lstm31)
+#lstm32 = LSTM(10)(lstm31)
+dense3 = Dense(10, activation='relu')(lstm32)
+
+#Merge input-models
+merge = concatenate([dense1, dense2, dense3])
+
+#interpretation
+hidden1 = Dense(20, activation='relu')(merge)
+output = Dense(11, activation='softmax')(hidden1)
+
+model = Model(inputs=[visible1, visible2, visible3], outputs=output)
+
+model.compile(loss = 'categorical_crossentropy',
               optimizer = 'rmsprop', 
               metrics=['accuracy'])
 
-filepath = 'C:/Users/iseliner/Documents/programming/saved_models/LSTMmodel_cbow100_80000max_len200_2hidden_68node_w123.h5'
+filepath = 'C:/Users/iseliner/Documents/programming/saved_models/LSTMensemble_10epoch.h5'
 checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, 
                              save_best_only=True, mode='min')
 callbacks_list = [checkpoint]
 
-# Fitting the RNN to the Training set
-print('Fitting data to the model...')
-history = nn_model.fit(X_train, y_train, epochs=10, batch_size=90, 
+print(model.summary())
+#plot_model(model,to_file='LSTMensemble.png')
+
+history = model.fit([X_train_essay, X_train_speech, X_train_ivec], y_train_essay, epochs=20, batch_size=60, 
                        callbacks=callbacks_list)
-print('Training complete!')
 
 
-
-
-####LOAD MODEL###########################################
-'''
-from keras.models import load_model
-
-#load the model
-loaded_model = load_model('C:/Users/iseliner/Documents/programming/saved_models/LSTMmodel.h5')
-assert_allclose(loaded_model.predict(X_train),
-                loaded_model.predict(X_train), 1e-5)
-
-#fit the model
-filepath = 'C:/Users/iseliner/Documents/programming/saved_models/LSTMmodel_2.h5'
-checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, 
-                             save_best_only=True, mode='min')
-callbacks_list = [checkpoint]
-loaded_model.fit(X_train, y_train, epoch=15, batch_size=50, callbacks=callbacks_list)
-'''
-from keras import backend as K
-
-currentLearningRate = K.get_value(nn_model.optimizer.lr)
-plt.plot(range(1,11), history.history['acc'])
-plt.xlabel('Epochs')
-plt.ylabel('Accuracy')
-plt.show()
-
+##TEST
 #////////////////////////////////////////////////////////////////////////
 #TESTING ________________________________________________________________
 test_label = pd.read_csv('C:/Users/iseliner/Documents/programming/data/data/labels/dev/labels.dev.csv')
 essay_test_path = ('C:/Users/iseliner/Documents/programming/data/data/essays/dev/original/')
 speech_test_path = ('C:/Users/iseliner/Documents/programming/data/data/speech_transcriptions/dev/original/')
+
+speech_test_path = ('C:/Users/iseliner/Documents/programming' +
+                    '/data/data/speech_transcriptions/dev/original/')
 
 #           changes labels index to the test_taker_id
 test_label = test_label.set_index('test_taker_id')
@@ -337,16 +338,15 @@ while x < len(test_label):
 
 #11000 elements, each containing all words in the essay
 print('Initializing test data')
-test_df = []
-makeseq(essay_test_path, test_df)
-#makeseq(speech_test_path, test_df)
-#appendtest(speech_test_path, test_df, test_label_list,1100)
-slicetestfiles(test_df)
-test_df = vectorizedata(test_df, model)
-test_df = padvectors(test_df)
+vector_len = 200
+essay_test_df = []
+makeseq(essay_test_path, essay_test_df)
+slicetestfiles(essay_test_df)
+essay_test_df = vectorizedata(essay_test_df, w2v)
+essay_test_df = padvectors(essay_test_df)
 
-X_test = np.array(test_df)
-X_test = np.reshape(X_test, (X_test.shape))
+X_test_essay = np.array(essay_test_df)
+X_test_essay = np.reshape(X_test_essay, (X_test_essay.shape))
 
 print('Setting final labels')
 label_test = pd.DataFrame(test_label_list)
@@ -356,16 +356,48 @@ encoder.fit(y)
 encoded_y = encoder.transform(y)
 y_test = np_utils.to_categorical(encoded_y)
 
+print('Preparing data for testing...')
+#Fetching i-vectors from distributed json file
+test_ivector = []
+with open('C:/Users/iseliner/Documents/programming/' +
+          '/data/data/ivectors/dev/ivectors.json') as data_file:    
+    data = json.load(data_file)
+    for x in data:
+        test_ivector.append(data[x])
+
+test_ivector = np.array(test_ivector)
+test_new = clf.transform(test_ivector)
+X_test_ivec = np.reshape(test_new, (test_new.shape[0], test_new.shape[1], 1))
+
+#SPEECH
+vector_len = 100
+speech_test_df = []
+makeseq(speech_test_path, speech_test_df)
+slicetestfiles(speech_test_df)
+speech_test_df = vectorizedata(speech_test_df, w2v_speech)
+speech_test_df = padvectors(speech_test_df)
+
+X_test_speech = np.array(speech_test_df)
+X_test_speech = np.reshape(X_test_speech, (X_test_speech.shape))
+
+y_test_speech = y_test
+y_test_ivec = y_test
+
 print('Running test set...')
-predicted_L2 = nn_model.evaluate(X_test, y_test, batch_size=32)
+predicted_L2 = model.evaluate([X_test_essay, X_test_speech, X_test_ivec], [y_test], batch_size=32)
 print(predicted_L2)
 
 #Prediction
-prediction = nn_model.predict(X_test, verbose=1)
+prediction = model.predict([X_test_essay, X_test_speech, X_test_ivec], verbose=1)
 print(prediction)
+
+#from sklearn.metrics import f1_score
+#f1 = f1_score(y_test, prediction)
+#print(f1)
  
 #
 #Saves the history of the run
+import matplotlib.pyplot as plt
 import datetime
 loglog = history.history
 log_file = open('C:/Users/iseliner/Documents/programming/logfile.txt', 'a')
@@ -441,45 +473,4 @@ plt.figure()
 plot_confusion_matrix(cnf_matrix, classes=matrix_labels,
                       title='Confusion matrix, without normalization')
 
-# Plot normalized confusion matrix
-plt.figure()
-plot_confusion_matrix(cnf_matrix, classes=matrix_labels, normalize=True,
-                      title='Normalized confusion matrix')
 
-plt.show()
-
-#Checks if GPU is usable
-#from tensorflow.python.client import device_lib
-#print(device_lib.list_local_devices())
-
-'''
-#Fetching i-vectors from distributed json file
-ivector = []
-with open('C:/Users/iseliner/Documents/programming/' +
-          '/data/data/ivectors/train/ivectors.json') as data_file:    
-    data = json.load(data_file)
-    for x in data:
-        ivector.append(data[x])
-
-ivector = np.array(ivector)
-scaler = MinMaxScaler(copy=False,feature_range=(0, 1))
-scaler.fit_transform(ivector)
-'''
-
-'''
-scaler2 = MinMaxScaler(copy=False,feature_range=(0, 1))
-new_df = pd.DataFrame(df)
-#print('Building FastText...')
-#
-#Will train the scaling function
-for i in range(new_df.size-1):
-    vector = new_df.iloc[1,i]
-    print(type(vector))
-    for j in vector:
-        scaler2.fit(j)
-
-X_train = []
-for vector in new_df:
-    X_train.append(scaler2.transform(vector))
-    '''
-    
